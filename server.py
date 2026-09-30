@@ -10250,6 +10250,7 @@ def _assert_current_turn(user_id):
 
 def update_camera_view(user_id, screen, anomaly_id=None, revision=None, vn_state=None, details_scroll_ratio=None, mini_game_state=None):
     _assert_current_turn(user_id)
+    core_state = core.get_game_state(DB_PATH)
     normalized = str(screen or "selection").strip().lower()
     if normalized not in {"selection", "room", "details", "vn", "emoji_game", "sea_game"}:
         normalized = "selection"
@@ -10273,6 +10274,12 @@ def update_camera_view(user_id, screen, anomaly_id=None, revision=None, vn_state
             "vn_state": dict(vn_state) if normalized == "vn" and isinstance(vn_state, dict) else None,
             "mini_game_state": dict(mini_game_state) if normalized in {"emoji_game", "sea_game"} and isinstance(mini_game_state, dict) else None,
             "details_scroll_ratio": scroll_ratio if normalized == "details" else 0.0,
+            # Bind the camera state to the actual turn. last_event_at cannot be
+            # used for this: opening a hint and many other ordinary actions
+            # update it without transferring the turn.
+            "turn_index": int(core_state.get("turn_index") or 0),
+            "day_number": int(core_state.get("current_day") or 0),
+            "turn_user_id": int(core_state.get("current_turn_user_id") or 0),
         }
     return {"ok": True}
 
@@ -12309,15 +12316,21 @@ def get_game_state(player_id):
     with state_lock:
         camera_state = dict(camera_view_states.get(current_turn_id) or {"screen": "selection", "anomaly_id": None})
         # A player's last room/details screen belongs to their previous turn.
-        # Until they publish a screen in the newly-started turn, spectators must
-        # see the current selection pool rather than that stale room.
-        turn_started_at = float(core_state.get("last_event_at") or 0)
-        camera_updated_at = float(camera_state.get("updated_at") or 0)
-        if camera_updated_at < turn_started_at:
+        # Compare the real turn identity; last_event_at changes on ordinary
+        # actions such as opening a hint and caused false resets to selection.
+        camera_is_current_turn = (
+            int(camera_state.get("turn_index", -1) if camera_state.get("turn_index") is not None else -1) == int(core_state.get("turn_index") or 0)
+            and int(camera_state.get("day_number", -1) if camera_state.get("day_number") is not None else -1) == current_day
+            and int(camera_state.get("turn_user_id") or 0) == current_turn_id
+        )
+        if not camera_is_current_turn:
             camera_state = {
                 "screen": "selection",
                 "anomaly_id": None,
-                "updated_at": turn_started_at,
+                "updated_at": time.time(),
+                "turn_index": int(core_state.get("turn_index") or 0),
+                "day_number": current_day,
+                "turn_user_id": current_turn_id,
             }
             if current_turn_id > 0:
                 camera_view_states[current_turn_id] = dict(camera_state)
@@ -13708,7 +13721,31 @@ class AppHandler(BaseHTTPRequestHandler):
         return json.loads(raw)
 
     def respond_json(self, payload, status=HTTPStatus.OK, headers=None):
-        raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        # Discord snowflakes are larger than JavaScript's safe integer range.
+        # Sending them as JSON numbers changes their last digits in a browser,
+        # so legitimate actions can look as if another player sent them.
+        def preserve_identifiers(value, parent_key=""):
+            key = str(parent_key or "").lower()
+            identifier_value = key == "id" or key.endswith("_id")
+            identifier_list = key.endswith("_ids") or key in {
+                "turn_order", "final_player_ids", "active_player_ids",
+                "alive_ids", "dead_ids", "queue",
+            }
+            if isinstance(value, dict):
+                return {name: preserve_identifiers(item, name) for name, item in value.items()}
+            if isinstance(value, list):
+                if identifier_list:
+                    return [
+                        str(item) if isinstance(item, int) and not isinstance(item, bool)
+                        else preserve_identifiers(item)
+                        for item in value
+                    ]
+                return [preserve_identifiers(item) for item in value]
+            if identifier_value and isinstance(value, int) and not isinstance(value, bool):
+                return str(value)
+            return value
+
+        raw = json.dumps(preserve_identifiers(payload), ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(raw)))

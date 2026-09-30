@@ -278,6 +278,7 @@ let gameMusic = null;
 let activeGameAnomalies = [];
 let activeGameSelectionKey = "";
 let gameStatePoller = null;
+let gameStatePollBusy = false;
 let lastAppliedTurnOwnerId = null;
 let lastActiveGameStartedAt = null;
 let deathModalActive = false;
@@ -2482,7 +2483,7 @@ async function advanceTennaIntro() {
   tennaIntroIndex += 1;
   if (tennaIntroIndex < tennaIntroLines.length) { showTennaIntroLine(); return; }
   tennaSpeech.classList.add("hidden"); tennaNext.classList.add("hidden");
-  if (Number(activeTennaGame?.owner_id) === Number(currentUserId())) {
+  if (sameUserId(activeTennaGame?.owner_id, currentUserId())) {
     const payload = await apiPost("/api/game/tenna-intro-complete", { user_id: currentUserId() });
     renderTennaGame(payload.tenna_game, true);
   } else {
@@ -2493,7 +2494,7 @@ async function advanceTennaIntro() {
   }
 }
 function tennaScoreMarkup(game) {
-  return `<div class="tenna-scorebar">${(game.players || []).map((p) => `<div class="tenna-score ${Number(p.id) === Number(game.current_player_id) ? "current" : ""}">${escapeHtml(p.name)}: ${Number(game.scores?.[String(p.id)] || 0)}</div>`).join("")}</div>`;
+  return `<div class="tenna-scorebar">${(game.players || []).map((p) => `<div class="tenna-score ${sameUserId(p.id, game.current_player_id) ? "current" : ""}">${escapeHtml(p.name)}: ${Number(game.scores?.[String(p.id)] || 0)}</div>`).join("")}</div>`;
 }
 function startTennaDeadlineClock(game) {
   if (tennaDeadlineTimer) window.clearInterval(tennaDeadlineTimer);
@@ -2587,7 +2588,7 @@ function renderTennaGame(game, forceOpen = false) {
     tennaIntroSession = String(game.session_id || "");
     tennaIntroLines = buildTennaIntro(game); tennaIntroIndex = 0; forceOpen = true; showTennaIntroLine();
   }
-  if (forceOpen || tennaExpandedManually || game.is_current_player || Number(game.owner_id) === currentUserId() && game.phase === "intro") tennaStageVisible = true;
+  if (forceOpen || tennaExpandedManually || game.is_current_player || sameUserId(game.owner_id, currentUserId()) && game.phase === "intro") tennaStageVisible = true;
   const shouldShowStage = tennaStageVisible;
   const shouldExpandPanel = shouldShowStage && !tennaCollapsed;
   tennaOverlay.classList.toggle("hidden", !shouldShowStage);
@@ -2605,7 +2606,7 @@ function renderTennaGame(game, forceOpen = false) {
     typeTennaPhrase(`${game.reaction.text}\n${game.reaction.detail || ""}`, { hideAfter: 1800 });
     if (game.reaction.applause) { try { tennaApplause.currentTime = 0; tennaApplause.play().catch(() => {}); } catch (_) {} }
   }
-  const current = (game.players || []).find(p => Number(p.id) === Number(game.current_player_id));
+  const current = (game.players || []).find(p => sameUserId(p.id, game.current_player_id));
   tennaMiniText.textContent = game.phase === "finished" ? "ИГРА ОКОНЧЕНА — РАЗВЕРНУТЬ" : `ХОД: ${current?.name || "участник"} — РАЗВЕРНУТЬ`;
 }
 async function startTennaShow(anomalyId = 104) {
@@ -4895,14 +4896,19 @@ function closePlayScreen() {
 
 function currentUserPayload() {
   return {
-    user_id: Number(discordUser?.id),
+    // Discord snowflakes exceed JavaScript's safe integer range.
+    user_id: String(discordUser?.id || ""),
     username: discordUser?.global_name || discordUser?.username || "Игрок",
     avatar_url: discordUser?.avatar_url || null
   };
 }
 
 function currentUserId() {
-  return Number(discordUser?.id);
+  return String(discordUser?.id || "");
+}
+
+function sameUserId(left, right) {
+  return String(left ?? "") === String(right ?? "");
 }
 
 function stopOnlinePolling() {
@@ -4917,6 +4923,7 @@ function stopGamePolling() {
     window.clearInterval(gameStatePoller);
     gameStatePoller = null;
   }
+  gameStatePollBusy = false;
 }
 
 function openOnlineListView() {
@@ -4977,7 +4984,7 @@ function renderLobbyList(lobby) {
 
 function renderObserverCard() {
   const lobbyPlayers = Array.from(onlinePlayerGrid?.querySelectorAll?.("[data-player-id]") || []);
-  const inSlot = lobbyPlayers.some((card) => Number(card.dataset.playerId) === currentUserId());
+  const inSlot = lobbyPlayers.some((card) => sameUserId(card.dataset.playerId, currentUserId()));
   if (inSlot) {
     onlineObserverCard.innerHTML = `
       <div class="online-observer-role compact">Ты в игровом слоте</div>
@@ -5035,14 +5042,14 @@ function renderRoomBanner(lobby) {
 function renderLobbyRoom(lobby) {
   const players = lobby.players || [];
   const me = currentUserId();
-  const mySlotIndex = players.findIndex((player) => Number(player.id) === me);
+  const mySlotIndex = players.findIndex((player) => sameUserId(player.id, me));
   onlineRoomCount.textContent = `${players.length} / ${lobby.capacity}`;
   renderRoomBanner(lobby);
   const cards = [];
   for (let i = 0; i < lobby.capacity; i += 1) {
     const player = players[i];
     if (player) {
-      const isMe = Number(player.id) === me;
+      const isMe = sameUserId(player.id, me);
       const artName = player.art_name || "Не выбран";
       const artDescription = player.art_description || "Описание эффекта пока отсутствует.";
       const readyText = player.ready ? "Готов" : "Не готов";
@@ -5231,7 +5238,7 @@ function renderTurnRibbon(turnUi = {}) {
 
   gameTurnTrack.innerHTML = currentDayCard + futureMarkup;
   gameWaitingTitle.textContent = turnUi.is_alive === false ? "Вы мертвы" : "Ожидание хода";
-  if (currentPlayer?.id && Number(currentPlayer.id) !== currentUserId()) {
+  if (currentPlayer?.id && !sameUserId(currentPlayer.id, currentUserId())) {
     gameWaitingSubtitle.textContent = `Сейчас ходит ${currentPlayer.name || "другой игрок"}.`;
   } else if (turnUi.is_alive === false) {
     gameWaitingSubtitle.textContent = "Игра продолжается, пока жив хотя бы один сотрудник.";
@@ -6336,6 +6343,9 @@ async function closeDetailsScreen(refreshRoom = true) {
   gameDetailsLightbox.classList.add("hidden");
   gameDetailsScreen.classList.add("hidden");
   gameRoomScreen.classList.remove("hidden");
+  if (!spectatorMode && activeRoomAnomalyId) {
+    publishCameraState("room", activeRoomAnomalyId, true);
+  }
   if (refreshRoom && activeRoomAnomalyId) {
     try {
       const payload = await api(`/api/work-room?user_id=${currentUserId()}&anomaly_id=${activeRoomAnomalyId}`);
@@ -6789,7 +6799,7 @@ async function openResetAction() {
           if (applyPayload.room) {
             renderWorkRoom(applyPayload.room);
           }
-          if (applyPayload.target_dead && Number(applyPayload.target_id) === Number(currentUserId())) {
+          if (applyPayload.target_dead && sameUserId(applyPayload.target_id, currentUserId())) {
             await showDeathModal(getDeathReasonFromPayload(applyPayload));
           } else {
             await showInfoModal(
@@ -7137,12 +7147,12 @@ async function showSpectatorCamera(camera = {}) {
       gameDetailsScreen.classList.add("hidden");
     } else if (screen === "room" && anomalyId) {
       hideSpectatorVn();
-      const payload = await api(`/api/work-room?user_id=${Number(camera.player_id)}&anomaly_id=${anomalyId}&observe=1`);
+      const payload = await api(`/api/work-room?user_id=${encodeURIComponent(String(camera.player_id))}&anomaly_id=${anomalyId}&observe=1`);
       renderWorkRoom(payload.room);
       gameDetailsScreen.classList.add("hidden");
     } else if (screen === "details" && anomalyId) {
       hideSpectatorVn();
-      const payload = await api(`/api/details?user_id=${Number(camera.player_id)}&anomaly_id=${anomalyId}`);
+      const payload = await api(`/api/details?user_id=${encodeURIComponent(String(camera.player_id))}&anomaly_id=${anomalyId}`);
       activeRoomAnomalyId = anomalyId;
       renderDetailsScreen(payload.details);
       gameSelectScreen.classList.add("hidden");
@@ -7246,7 +7256,7 @@ async function handleCrimsonBite(prompt = {}) {
     iconAlt: "Багровый вирус",
     choices: targets.map((target) => ({
       label: `Укусить ${target.label}`,
-      onSelect: async () => resolveBite(Number(target.id))
+      onSelect: async () => resolveBite(String(target.id))
     }))
   });
   return true;
@@ -7523,7 +7533,7 @@ async function handleX125SpecialEvent(event = null) {
         resumeBackground=await playX125EramIntro(x125PendingIntroEvent);
       }
       let battle=x125PendingIntroEvent?.battle||event.battle;
-      if(Number(battle?.owner_id)===Number(currentUserId())){
+      if(sameUserId(battle?.owner_id,currentUserId())){
         try{const payload=await apiPost("/api/game/x125-battle-update",{user_id:currentUserId(),state:{restart_attack:1}});battle=payload.battle||battle;}catch(_){}
       }
       if(battle?.status==="active"&&!x125BattleRuntime)startX125SoulBattle(battle,resumeBackground);
@@ -8010,7 +8020,7 @@ function startX125SoulBattle(initialState, resumeBackgroundOverride = null) {
   document.body.appendChild(overlay);
   const canvas = overlay.querySelector("canvas");
   const ctx = canvas.getContext("2d");
-  const owner = Number(initialState.owner_id) === Number(currentUserId());
+  const owner = sameUserId(initialState.owner_id, currentUserId());
   const initialDestroyed=Array.isArray(initialState.destroyed)?initialState.destroyed.map(String):[],initialDestroyedAt=initialState.destroyed_at&&typeof initialState.destroyed_at==="object"?Object.entries(initialState.destroyed_at).map(([id,at])=>[String(id),Number(at)||0]):[];
   const runtime = { overlay, canvas, ctx, owner, serverState: initialState, x: Number(initialState.x ?? 0.5), y: Number(initialState.y ?? 0.5), targetX:Number(initialState.x ?? 0.5), targetY:Number(initialState.y ?? 0.5), observerStateAt:Number(initialState.updated_at || 0), syncBusy:false, observerSyncBusy:false, facing: initialState.facing || "up", hp: Number(initialState.hp || 0), maxHp: Number(initialState.max_hp || 100), keys: new Set(), isMoving:false, shots: Array.isArray(initialState.shots)?initialState.shots.map(s=>({...s})):[], destroyed: new Set(initialDestroyed), destroyedAt:new Map(initialDestroyedAt), deathFades:new Map(), playedSoundEvents:new Set(), transientAudio:new Set(), targetLocks:new Map(), lastAttack:0, lastSoundPhase:-1, lastShotAt:0, attack4ClearAt:0, attack6ClearAt:0, advancing:false, invulnerableUntil: 0, lastFrame: performance.now(), lastSync: 0, lastObserverSync:0, ended: false };
   x125BattleRuntime = runtime;
@@ -8144,7 +8154,7 @@ function startX125SoulBattle(initialState, resumeBackgroundOverride = null) {
 
 async function handleKlipotaEvent(event = null) {
   const eventId = Number(event?.id || 0);
-  if (!eventId || Number(event?.user_id || 0) !== Number(currentUserId())) return;
+  if (!eventId || !sameUserId(event?.user_id, currentUserId())) return;
   const storageKey = `klipota-event:${currentUserId()}:${eventId}`;
   if (window.localStorage.getItem(storageKey) === "shown") return;
   window.localStorage.setItem(storageKey, "shown");
@@ -8286,7 +8296,14 @@ async function applyGameState(payload, options = {}) {
   await handleX125SpecialEvent(payload?.x125_special_event);
   await handleKlipotaEvent(payload?.klipota_event);
   await handleBloodbotEvent(payload?.bloodbot_event);
-  await showUtilizerNoticeIfPending(payload?.utilizer_notice);
+  const utilizerNoticeWasShown = await showUtilizerNoticeIfPending(payload?.utilizer_notice);
+  if (utilizerNoticeWasShown) {
+    // The user may keep this modal open while newer polling responses arrive.
+    // Never continue rendering the stale pre-confirmation payload: reload the
+    // authoritative turn after the notice has been acknowledged.
+    const refreshedGame = await api(`/api/game?user_id=${encodeURIComponent(currentUserId())}`);
+    return applyGameState(refreshedGame, { ...options, forceRefresh: true });
+  }
   if (payload?.contract_summary?.pending) {
     await showContractSummaryIfPending(payload.contract_summary);
     return true;
@@ -8310,7 +8327,7 @@ async function applyGameState(payload, options = {}) {
     return true;
   }
 
-  const currentTurnOwnerId = Number(turnUi.current_turn_user_id || 0);
+  const currentTurnOwnerId = String(turnUi.current_turn_user_id || "");
   const isMyTurn = !!turnUi.is_my_turn;
   if (turnUi.is_alive === false) {
     // A dead player must never remain inside their old interactive room or
@@ -8323,7 +8340,7 @@ async function applyGameState(payload, options = {}) {
     activeRoomAnomalyId = null;
     currentDetailsPayload = null;
   }
-  const becameMyTurn = isMyTurn && Number(lastAppliedTurnOwnerId || 0) !== Number(currentUserId());
+  const becameMyTurn = isMyTurn && !sameUserId(lastAppliedTurnOwnerId, currentUserId());
   lastAppliedTurnOwnerId = currentTurnOwnerId || null;
   const signature = `${game.current_day}:${game.day_started_at || ""}`;
   const shouldShowDayOverlay = options.forceRefresh || activeGameSignature !== signature;
@@ -8429,7 +8446,8 @@ async function applyGameState(payload, options = {}) {
 function ensureGamePolling() {
   if (gameStatePoller) return;
   gameStatePoller = window.setInterval(async () => {
-    if (gameScreen.classList.contains("hidden")) return;
+    if (gameScreen.classList.contains("hidden") || gameStatePollBusy) return;
+    gameStatePollBusy = true;
     try {
       const payload = await api(`/api/game?user_id=${currentUserId()}`);
       await handleTrainTicketState(payload?.train_ticket);
@@ -8449,7 +8467,10 @@ function ensureGamePolling() {
         return;
       }
       await applyGameState(payload);
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      gameStatePollBusy = false;
+    }
   }, 1500);
 }
 
