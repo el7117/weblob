@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+
+# Рабочая база и её служебные файлы. WEB_GAME.seed.db хранится в репозитории
+# и используется только для первого заполнения пустого Railway Volume.
+WEB_GAME.db
+WEB_GAME.db-*
+WEB_GAME.seed.db-*
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Локальные тестовые копии баз.
+*_tmp_*.db
+tmp_*.db
+*.coretest*.db

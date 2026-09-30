@@ -1,0 +1,464 @@
+﻿<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lobotomy Corporation Menu</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="landing" id="landing">
+      <header class="topbar">
+        <div class="profile-shell" id="profileShell">
+          <button class="profile-button" id="profileButton" aria-label="Профиль Discord">
+            <span class="profile-placeholder" id="profilePlaceholder">войти</span>
+            <img class="profile-avatar hidden" id="profileAvatar" alt="Аватар Discord">
+          </button>
+          <div class="profile-menu hidden" id="profileMenu">
+            <div class="profile-menu-name" id="profileUsername"></div>
+            <div class="profile-menu-sub" id="profileGlobalName"></div>
+            <button class="profile-logout" id="profileLogout">выйти</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="menu-left">
+        <button class="menu-button" id="playOpenButton">Играть</button>
+        <button class="menu-button" data-open-leaderboard>Таблица лидеров</button>
+      </div>
+
+      <div class="menu-right">
+        <button class="side-button" data-open-codex>
+          <img src="/photo/web_ui/codex.png" alt="Кодекс">
+          <span>кодекс</span>
+        </button>
+      </div>
+
+      <section class="leaderboard-screen hidden" id="leaderboardScreen" aria-label="Таблица лидеров">
+        <div class="leaderboard-wrap">
+          <h2 class="leaderboard-title">Таблица лидеров</h2>
+          <div class="leaderboard-list" id="leaderboardList"></div>
+          <div class="leaderboard-pagination">
+            <button class="page-arrow" id="leaderboardPrev" aria-label="Предыдущая страница">&#x2039;</button>
+            <div class="page-indicator" id="leaderboardIndicator">1 / 1</div>
+            <button class="page-arrow" id="leaderboardNext" aria-label="Следующая страница">&#x203A;</button>
+          </div>
+        </div>
+        <button class="screen-back" id="leaderboardBack">назад</button>
+      </section>
+
+      <section class="play-screen hidden" id="playScreen" aria-label="Выбор режима игры">
+        <img class="play-corner-logo" src="/photo/web_ui/nophoto.png" alt="Логотип">
+        <div class="play-heading">Выберите сложность</div>
+        <div class="play-modes">
+          <div class="play-mode-card">
+            <button class="play-mode-button" id="onlineModeButton" type="button">
+              <img src="/photo/web_ui/online.png" alt="Нормальная">
+              <span>Нормальная</span>
+            </button>
+            <div class="play-mode-features">
+              <div>- 3 типа урона от аномалий. Нет повышенного урона.</div>
+              <div>- Отсутствует оружие и броня в связи с отсутствием побега аномалий (их подавлением занимаются кролики)</div>
+              <div>- Один департамент</div>
+			  <div>- Хорошая работа позволяет избежать урон при работе</div>
+              <div>- Аномалии проще в обращении</div>
+            </div>
+          </div>
+          <div class="play-mode-card">
+            <button class="play-mode-button disabled" id="soloModeButton" type="button" disabled aria-disabled="true">
+              <img src="/photo/web_ui/solo.png" alt="Хардмод">
+              <span>Хардмод</span>
+            </button>
+            <div class="play-mode-features">
+              <div>- 4 типа урона от аномалий. Сопротивление урону определяется снаряжением персонала</div>
+              <div>- У аномалий можно получить экипировку</div>
+              <div>- Подавление сбежавших аномалий необходимо производить своими силами</div>
+              <div>- 5 департаментов со своими бонусами и опасностями</div>
+              <div>- Аномалии значительно опаснее</div>
+              <div>- Архитектор ждёт...</div>
+            </div>
+          </div>
+        </div>
+        <button class="screen-back" id="playBack">назад</button>
+      </section>
+
+      <section class="online-screen hidden" id="onlineScreen" aria-label="Онлайн-лобби">
+        <div class="online-list-view" id="onlineListView">
+          <div class="online-wrap">
+            <h2 class="online-title">Онлайн</h2>
+            <div class="online-lobby-list" id="onlineLobbyList"></div>
+            <div class="online-create-row">
+              <button class="online-action-button" id="createLobbyButton" type="button">Создать лобби</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="online-room-view hidden" id="onlineRoomView">
+          <div class="online-wrap">
+            <div class="online-room-header">
+              <h2 class="online-title">Лобби</h2>
+              <div class="online-room-count" id="onlineRoomCount">0 / 5</div>
+            </div>
+            <div class="online-room-banner hidden" id="onlineRoomBanner"></div>
+            <div class="online-room-layout">
+              <aside class="online-observer-panel">
+                <div class="online-section-title">Наблюдатель</div>
+                <div class="online-observer-card" id="onlineObserverCard"></div>
+              </aside>
+              <div class="online-slots-panel">
+                <div class="online-section-title">Игроки</div>
+                <div class="online-player-grid" id="onlinePlayerGrid"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="screen-back" id="onlineBack">назад</button>
+      </section>
+
+      <section class="game-screen hidden" id="gameScreen" aria-label="Экран игры">
+        <button class="game-surrender-button" id="gameSurrenderButton" type="button" title="Сдаться и завершить игру для своего персонажа" disabled>Сдаться</button>
+        <button class="game-music-toggle" id="gameMusicToggle" type="button" aria-pressed="false" title="Отключить фоновую музыку">🔊 Музыка</button>
+        <div class="game-damage-flash train-damage-flash" id="trainDamageFlash" aria-hidden="true"></div>
+        <button class="train-ticket-button hidden" id="trainTicketButton" type="button" title="Сбросить таймер Адского экспресса" aria-label="Использовать билет и сбросить таймер поезда">
+          <img src="/photo/special/ticket.png" alt="Билет Адского экспресса">
+        </button>
+        <button class="violin-steal-button hidden" id="violinStealButton" type="button" title="Украсть Скрипку Безмолвного Дирижёра" aria-label="Украсть скрипку">
+          <img src="/photo/special/skripka.png" alt="Скрипка Безмолвного Дирижёра">
+        </button>
+        <div class="game-turn-ribbon" id="gameTurnRibbon">
+          <div class="game-turn-track" id="gameTurnTrack"></div>
+        </div>
+        <div class="game-day-overlay hidden" id="gameDayOverlay">
+          <div class="game-day-text" id="gameDayText">ДЕНЬ 1</div>
+        </div>
+        <div class="game-final-screen hidden" id="gameFinalScreen">
+          <div class="game-final-card">
+            <div class="game-final-title">Итоги игры</div>
+            <div class="game-final-winner" id="gameFinalWinner">Победитель: -</div>
+            <div class="game-final-list" id="gameFinalList"></div>
+            <button class="game-final-button" id="gameFinalCloseButton" type="button">ОК</button>
+          </div>
+        </div>
+        <div class="game-waiting-screen hidden" id="gameWaitingScreen">
+          <div class="game-waiting-card">
+            <div class="game-waiting-title" id="gameWaitingTitle">Ожидание хода</div>
+            <div class="game-waiting-subtitle" id="gameWaitingSubtitle">Сейчас ход другого игрока.</div>
+          </div>
+        </div>
+        <div class="spectator-camera-overlay hidden" id="spectatorCameraOverlay" aria-live="polite">
+          <div class="spectator-camera-noise" aria-hidden="true"></div>
+          <div class="spectator-camera-label">CAM: <span id="spectatorCameraName">—</span></div>
+        </div>
+        <aside class="game-action-log hidden" id="gameActionLog" aria-live="polite"></aside>
+        <div class="game-select-screen hidden" id="gameSelectScreen">
+          <div class="game-select-bg"></div>
+          <div class="game-select-row" id="gameSelectRow"></div>
+          <div class="game-select-description" id="gameSelectDescription">Наведи на контейнер, чтобы увидеть описание.</div>
+        </div>
+        <div class="game-room-screen hidden" id="gameRoomScreen">
+          <div class="game-damage-flash" id="gameDamageFlash" aria-hidden="true"></div>
+          <div class="stat-upgrade-overlay hidden" id="statUpgradeOverlay">
+            <div class="stat-upgrade-card">
+              <div class="stat-upgrade-title">Какой атрибут улучшить?</div>
+              <div class="stat-upgrade-reward" id="statUpgradeReward">Получено 0 Соревновательных очков и 0 очков прокачки.</div>
+              <div class="stat-upgrade-points" id="statUpgradePoints">В наличии 0 очков прокачки</div>
+              <div class="stat-upgrade-list" id="statUpgradeList"></div>
+              <button class="stat-upgrade-close" id="statUpgradeCloseButton" type="button">Закрыть</button>
+            </div>
+          </div>
+          <div class="event-overlay hidden" id="eventOverlay">
+            <div class="event-card">
+              <div class="event-head">
+                <img class="event-icon" id="eventIcon" src="" alt="">
+                <div class="event-intro" id="eventIntro"></div>
+              </div>
+              <div class="event-roller-wrap hidden" id="eventRollerWrap">
+                <div class="event-roller-viewport">
+                  <div class="event-roller" id="eventRoller"></div>
+                </div>
+              </div>
+              <div class="event-effect" id="eventEffect"></div>
+              <div class="event-choice-list" id="eventChoices"></div>
+              <button class="event-button hidden" id="eventConfirmButton" type="button">ОК</button>
+            </div>
+          </div>
+          <div class="inventory-overlay hidden" id="inventoryOverlay">
+            <div class="inventory-card">
+              <div class="inventory-title" id="inventoryTitle">Инвентарь</div>
+              <div class="inventory-body">
+                <div class="inventory-list" id="inventoryList"></div>
+                <div class="inventory-preview" id="inventoryPreview">
+                  <div class="inventory-preview-name" id="inventoryPreviewName">Предмет не выбран</div>
+                  <div class="inventory-preview-effect" id="inventoryPreviewEffect">Наведите на предмет, чтобы увидеть его эффект.</div>
+                  <div class="inventory-preview-actions">
+                    <button class="event-button" id="inventoryUseButton" type="button" disabled>Использовать</button>
+                  </div>
+                </div>
+              </div>
+              <button class="event-button" id="inventoryCloseButton" type="button">ОК</button>
+            </div>
+          </div>
+          <div class="game-room-shell">
+            <div class="game-room-stage">
+              <img class="game-room-frame" src="/photo/work_room/roomempty.png" alt="Комната работы">
+              <img class="game-room-initial-effect hidden" id="gameRoomInitialEffect" src="/photo/work_room/initialeffect.png" alt="Мгновенный эффект">
+              <div class="game-room-result-panel">
+                <img class="game-room-norisk hidden" id="gameRoomNoRisk" src="/photo/work_room/norisks.png" alt="Неизвестный класс">
+                <div class="game-room-result-score" id="gameRoomResultScore">+0</div>
+                <div class="game-room-result-grid" id="gameRoomResultGrid"></div>
+              </div>
+              <div class="game-room-top">
+                <div class="game-room-klipota-badge" id="gameRoomKlipotaBadge">
+                  <div class="game-room-klipota-mark" id="gameRoomKlipotaMark">?</div>
+                </div>
+                <div class="game-room-rp">
+                  <span class="game-room-rp-value" id="gameRoomRpValue">0</span>
+                </div>
+                <div class="game-room-name" id="gameRoomName">НЕИЗВЕСТНЫЙ ОБЪЕКТ</div>
+              </div>
+              <div class="game-room-penalty hidden" id="gameRoomPenalty">-0%</div>
+              <div class="game-room-model-wrap">
+                <img class="game-room-model" id="gameRoomModel" src="/photo/work_room/404.png" alt="Аномалия">
+                <img class="game-room-agent hidden" id="gameRoomAgent" alt="Персонаж игрока">
+              </div>
+              <div class="game-room-work-panel">
+                <div class="game-room-action-menu" id="gameRoomActionMenu">
+                  <button class="game-room-action-button" id="actionWorkButton" type="button">Работа</button>
+                   <button class="game-room-action-button" id="actionInventoryButton" type="button">Инвентарь</button>
+                   <button class="game-room-action-button" id="actionFleeButton" type="button">Сбежать</button>
+                   <button class="game-room-action-button hidden" id="actionArtifactButton" type="button">Использовать артефакт</button>
+                   <button class="game-room-action-button" id="actionFinishButton" type="button">Завершить работу</button>
+                  <button class="game-room-action-button hidden" id="actionViolinButton" type="button">Украсть скрипку</button>
+                </div>
+                <div class="game-room-work-menu hidden" id="gameRoomWorkMenu">
+                  <div class="game-room-work-title">Выбор работы</div>
+                  <div class="game-room-work-shell">
+                    <button class="game-room-work-card instinct" id="workButtonIntuition" type="button" aria-label="Интуиция">
+                      <img class="game-room-work-icon" src="/photo/work_room/work1.png" alt="">
+                      <span class="game-room-work-label">Интуиция</span>
+                    </button>
+                    <button class="game-room-work-card insight" id="workButtonInsight" type="button" aria-label="Понимание">
+                      <img class="game-room-work-icon" src="/photo/work_room/work2.png" alt="">
+                      <span class="game-room-work-label">Понимание</span>
+                    </button>
+                    <button class="game-room-work-card affection" id="workButtonAffection" type="button" aria-label="Привязанность">
+                      <img class="game-room-work-icon" src="/photo/work_room/work3.png" alt="">
+                      <span class="game-room-work-label">Привязанность</span>
+                    </button>
+                    <button class="game-room-work-card suppression" id="workButtonSuppression" type="button" aria-label="Подавление">
+                      <img class="game-room-work-icon" src="/photo/work_room/work4.png" alt="">
+                      <span class="game-room-work-label">Подавление</span>
+                    </button>
+                  </div>
+                  <button class="game-room-action-button secondary" id="actionWorkBackButton" type="button">Назад</button>
+                </div>
+                <div class="game-room-choice-menu hidden" id="gameRoomRiskMenu">
+                  <div class="game-room-work-title">Выберите класс опасности</div>
+                  <button class="game-room-action-button" data-risk-choice="1" type="button">1 - ZAYIN</button>
+                  <button class="game-room-action-button" data-risk-choice="2" type="button">2 - TETH</button>
+                  <button class="game-room-action-button" data-risk-choice="3" type="button">3 - HE</button>
+                  <button class="game-room-action-button" data-risk-choice="4" type="button">4 - WAW</button>
+                  <button class="game-room-action-button" data-risk-choice="5" type="button">5 - ALEPH</button>
+                  <button class="game-room-action-button" data-risk-choice="6" type="button">6 - не выбирать</button>
+                  <button class="game-room-action-button secondary" id="actionRiskBackButton" type="button">Назад</button>
+                </div>
+                <div class="game-room-choice-menu hidden" id="gameRoomTypeMenu">
+                  <div class="game-room-work-title">Выберите тип</div>
+                  <button class="game-room-action-button" data-type-choice="1" type="button">1 - природный</button>
+                  <button class="game-room-action-button" data-type-choice="2" type="button">2 - темный</button>
+                  <button class="game-room-action-button" data-type-choice="3" type="button">3 - конструкт</button>
+                  <button class="game-room-action-button" data-type-choice="4" type="button">4 - абстракт</button>
+                  <button class="game-room-action-button" data-type-choice="5" type="button">5 - гуманоид</button>
+                  <button class="game-room-action-button" data-type-choice="6" type="button">6 - не выбирать</button>
+                  <button class="game-room-action-button secondary" id="actionTypeBackButton" type="button">Назад</button>
+                </div>
+                <div class="game-room-choice-menu hidden" id="gameRoomResultMenu">
+                  <div class="game-room-work-title">Действия</div>
+                  <button class="game-room-action-button" id="actionRepeatWorkButton" type="button">Повторить</button>
+                  <button class="game-room-action-button" id="actionChangeWorkButton" type="button">Изменить работу</button>
+                  <button class="game-room-action-button" id="actionReturnMenuButton" type="button">Вернуться</button>
+                </div>
+                <div class="game-room-work-meta" id="gameRoomWorkMeta"></div>
+                <div class="game-room-status-panel player-status-only hidden" id="gameRoomStatusPanel">
+                  <div class="game-room-status-title">[Состояние]</div>
+                  <div id="gameRoomPlayerStatus"></div>
+                </div>
+                <div class="game-room-admin-panel debug-only hidden" id="gameRoomAdminPanel">
+                  <div class="game-room-admin-title">Admin Panel</div>
+                  <div class="game-room-admin-stats" id="gameRoomAdminStats"></div>
+                  <div class="game-room-debug" id="gameRoomDebug"></div>
+                  <div class="game-room-admin-actions">
+                    <button class="game-room-admin-button" id="adminAddStatsButton" type="button">+1 к статам</button>
+                    <button class="game-room-admin-button" id="adminAddRpButton" type="button">+900 RP</button>
+                    <button class="game-room-admin-button" id="adminRollPsychosisButton" type="button">Ролл психоза</button>
+                    <button class="game-room-admin-button" id="adminTrainTenSecondsButton" type="button">Поезд: 10 сек</button>
+                    <button class="game-room-admin-button" id="adminX125Button" type="button">Х125</button>
+                    <div class="game-room-admin-inline">
+                      <input class="game-room-admin-input" id="adminDayInput" type="number" min="1" max="15" placeholder="день">
+                      <button class="game-room-admin-button small" id="adminSetDayButton" type="button">Перейти</button>
+                    </div>
+                    <div class="game-room-admin-inline">
+                      <input class="game-room-admin-input" id="adminAnomalyInput" type="number" min="1" placeholder="аномалия id">
+                      <button class="game-room-admin-button small" id="adminSpawnAnomalyButton" type="button">Вызвать</button>
+                    </div>
+                    <div class="game-room-admin-inline">
+                      <input class="game-room-admin-input" id="adminNextAnomalyInput" type="number" min="1" placeholder="id на след. день">
+                      <button class="game-room-admin-button small" id="adminForceNextAnomalyButton" type="button">В пул</button>
+                    </div>
+                    <div class="game-room-admin-inline">
+                      <input class="game-room-admin-input" id="adminD20RollInput" type="number" min="1" max="20" placeholder="бросок D20">
+                      <button class="game-room-admin-button small" id="adminForceD20RollButton" type="button">На след. день</button>
+                    </div>
+                    <div class="game-room-admin-inline">
+                      <input class="game-room-admin-input" id="adminAlastorTaskInput" type="number" min="1" max="10" placeholder="Задание Аластора">
+                      <button class="game-room-admin-button small" id="adminForceAlastorTaskButton" type="button">На след. день</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="game-room-globals-stage-panel debug-only hidden">
+                <div class="game-room-admin-title">Globals</div>
+                <div class="game-room-debug globals" id="gameRoomGlobals"></div>
+              </div>
+            </div>
+          </div>
+          <button class="screen-back" id="gameRoomBack">назад</button>
+        </div>
+        <div class="game-details-screen hidden" id="gameDetailsScreen">
+          <div class="game-details-stage">
+            <div class="game-details-progress" id="gameDetailsProgress">
+              <div class="game-details-progress-label">ПРОГРЕСС<br>ОТКРЫТИЯ</div>
+              <div class="game-details-progress-value" id="gameDetailsProgressValue">0%</div>
+              <div class="game-details-progress-note hidden" id="gameDetailsProgressNote"></div>
+            </div>
+
+            <section class="game-details-panel base-info">
+              <div class="game-details-base-media" id="gameDetailsBaseMedia"></div>
+              <div class="game-details-base-meta">
+                <div class="game-details-base-name" id="gameDetailsBaseName">Неизвестно</div>
+                <div class="game-details-base-row">
+                  <div class="game-details-base-code" id="gameDetailsBaseCode">ID</div>
+                  <div class="game-details-base-risk" id="gameDetailsBaseRisk">UNKNOWN</div>
+                </div>
+              </div>
+              <div class="game-details-dmg-wrap">
+                <div class="game-details-dmg-type" id="gameDetailsDmgType">-</div>
+                <div class="game-details-dmg-amount" id="gameDetailsDmgAmount">-</div>
+              </div>
+              <div class="game-details-good-range" id="gameDetailsGoodRange">-</div>
+              <div class="game-details-bad-range" id="gameDetailsBadRange">-</div>
+            </section>
+
+            <section class="game-details-panel features">
+              <div class="game-details-hidden-hint-slot" id="gameDetailsHiddenHintSlot"></div>
+              <div class="game-details-hints-list" id="gameDetailsHintsList"></div>
+            </section>
+
+            <section class="game-details-panel preferences">
+              <div class="game-details-chance-lock" id="gameDetailsPreferences">
+                <img src="/photo/work_room/chancelocked.png" alt="Предпочтения заблокированы">
+              </div>
+            </section>
+
+            <section class="game-details-panel escape">
+              <div class="game-details-escape-klipota-box" id="gameDetailsKlipotaValue">0</div>
+              <div class="game-details-escape-static" id="gameDetailsEscapeText">НЕ СБЕГАЕТ</div>
+            </section>
+
+            <section class="game-details-panel history">
+              <div class="game-details-description-slot" id="gameDetailsDescriptionSlot"></div>
+            </section>
+
+            <div class="game-details-rp-wrap">
+              <div class="game-details-rp-shell">
+                <span class="game-details-rp-value" id="gameDetailsRpValue">0</span>
+              </div>
+            </div>
+
+            <button class="game-details-close-hitbox" id="gameDetailsCloseButton" type="button" aria-label="Выйти"></button>
+          </div>
+          <div class="event-overlay hidden" id="detailsEventOverlay">
+            <div class="event-card">
+              <div class="event-head">
+                <img class="event-icon" id="detailsEventIcon" src="/photo/work_room/hinthidden.png" alt="">
+                <div class="event-intro" id="detailsEventIntro"></div>
+              </div>
+              <div class="event-effect" id="detailsEventEffect"></div>
+              <div class="event-choice-list" id="detailsEventChoices"></div>
+              <button class="event-button hidden" id="detailsEventConfirmButton" type="button">ОК</button>
+            </div>
+          </div>
+          <div class="game-details-lightbox hidden" id="gameDetailsLightbox">
+            <button class="game-details-lightbox-close" id="gameDetailsLightboxClose" type="button" aria-label="Закрыть"></button>
+            <img class="game-details-lightbox-image" id="gameDetailsLightboxImage" alt="Фото аномалии">
+          </div>
+        </div>
+      </section>
+
+      <div class="tenna-overlay hidden" id="tennaOverlay">
+        <div class="tenna-stage">
+          <img class="tenna-background" src="/photo/special/show.png" alt="Шоу Тенны">
+          <div class="tenna-podiums" id="tennaPodiums"></div>
+          <img class="tenna-host" id="tennaHost" src="/photo/special/Tenna_1.png" alt="Тенна">
+          <div class="tenna-speech hidden" id="tennaSpeech"></div>
+          <button class="tenna-next hidden" id="tennaNext" type="button">ДАЛЬШЕ</button>
+          <button class="tenna-collapse hidden" id="tennaCollapse" type="button">Свернуть</button>
+          <div class="tenna-board hidden" id="tennaBoard"></div>
+          <div class="tenna-question hidden" id="tennaQuestion"></div>
+        </div>
+      </div>
+      <button class="tenna-mini hidden" id="tennaMini" type="button">
+        <img src="/photo/special/show.png" alt="Идёт шоу Тенны">
+        <span id="tennaMiniText">ИДЁТ ШОУ — РАЗВЕРНУТЬ</span>
+      </button>
+
+      <div class="vn-overlay hidden" id="vnOverlay">
+        <div class="vn-window">
+          <img class="vn-window-bg" src="/photo/VN/VN_anomalyinteraction.png" alt="Диалог с аномалией">
+          <div class="vn-object-prompt hidden" id="vnObjectPrompt"></div>
+          <div class="vn-hotspot-layer" id="vnHotspots"></div>
+          <div class="vn-popup hidden" id="vnPopup" role="dialog" aria-modal="true">
+            <div class="vn-popup-text" id="vnPopupText"></div>
+            <div class="vn-popup-actions" id="vnPopupActions"></div>
+          </div>
+          <div class="vn-choice-list" id="vnChoices"></div>
+          <img class="vn-portrait" id="vnPortrait" src="/photo/VN/VN_anomaly.png" alt="Собеседник аномалии">
+          <div class="vn-bottom-strip">
+            <div class="vn-nameplate" id="vnNameplate">SC-NA-Z-0</div>
+            <div class="vn-speaker" id="vnSpeaker">VN_anomaly</div>
+            <div class="vn-text" id="vnText"></div>
+          </div>
+          <button class="vn-close-button" id="vnCloseButton" type="button">Продолжить</button>
+        </div>
+      </div>
+
+      <section class="codex-screen hidden" id="codexScreen" aria-label="Энциклопедия аномалий">
+        <div class="codex-sidebar">
+          <div class="codex-sidebar-line" aria-hidden="true"></div>
+          <img class="codex-title-image" src="/photo/web_ui/anomaly_topleft.png" alt="Энциклопедия аномалий">
+          <div class="codex-progress">
+            <div class="codex-progress-label">изучено аномалий</div>
+            <div class="codex-progress-value" id="codexProgressValue">0%</div>
+          </div>
+          <div class="codex-details empty" id="codexDetails"></div>
+        </div>
+
+        <div class="codex-content">
+          <div class="codex-grid" id="codexGrid"></div>
+          <div class="codex-pagination">
+            <button class="page-arrow" id="pagePrev" aria-label="Предыдущая страница">&#x2039;</button>
+            <div class="page-indicator" id="pageIndicator">1 / 1</div>
+            <button class="page-arrow" id="pageNext" aria-label="Следующая страница">&#x203A;</button>
+          </div>
+        </div>
+
+        <button class="codex-close" id="codexClose">закрыть</button>
+      </section>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="/app_runtime.js" defer></script>
+  </body>
+</html>
