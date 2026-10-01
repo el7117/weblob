@@ -9482,7 +9482,9 @@ def get_player_effect_debug(player_id):
     for index, column in enumerate(core.EFFECT_COLUMNS, start=1):
         effect = _effect_debug_info(row[column])
         if effect:
-            if str(effect.get("key") or "").lower() == "comp9_next":
+            # Internal counters drive mechanics, but must never be exposed as
+            # player-facing status names.
+            if str(effect.get("key") or "").lower() in {"comp9_next", "guitarturnsleft"}:
                 continue
             if effect.get("key") == core.SALA_MULT_TOK:
                 try:
@@ -11489,7 +11491,11 @@ def _tenna_alive_players():
 def _tenna_session_for_user(user_id):
     uid = int(user_id)
     for session in tenna_game_sessions.values():
-        if session.get("phase") != "closed" and uid in session.get("player_ids", []):
+        # player_ids contains contestants; viewer_ids also contains players
+        # who were already dead when the show began. They still receive the
+        # public show state, but can never take a turn or answer for others.
+        viewers = session.get("viewer_ids", session.get("player_ids", []))
+        if session.get("phase") != "closed" and uid in viewers:
             return session
     return None
 
@@ -11529,10 +11535,24 @@ def start_tenna_game(user_id, anomaly_id=104):
             row = conn.execute("SELECT COALESCE(NAME, '') NAME, COALESCE(AVATAR_URL, '') AVATAR_URL FROM PLAYERS WHERE ID = ?", (uid,)).fetchone()
         players.insert(0, {"id": uid, "name": (row["NAME"] if row else "") or f"Игрок {uid}", "avatar_url": row["AVATAR_URL"] if row else ""})
     ids = [p["id"] for p in players]
+    with state_lock:
+        viewer_ids = [
+            int(player.get("id") or 0)
+            for player in lobby_state.get("players", [])
+            if int(player.get("id") or 0) > 0
+        ]
+    if not viewer_ids:
+        try:
+            viewer_ids = [int(pid) for pid in core.get_game_state(DB_PATH).get("turn_order", [])]
+        except Exception:
+            viewer_ids = []
+    if uid not in viewer_ids:
+        viewer_ids.append(uid)
     owner_index = ids.index(uid)
     session = {
         "id": secrets.token_hex(8), "owner_id": uid, "anomaly_id": int(anomaly_id), "players": players,
-        "player_ids": ids, "scores": {pid: 0 for pid in ids}, "turn_index": owner_index,
+        "player_ids": ids, "viewer_ids": viewer_ids,
+        "scores": {pid: 0 for pid in ids}, "turn_index": owner_index,
         "turns_done": 0, "total_turns": len(TENNA_CATEGORIES) * len(TENNA_POINTS), "used": [], "phase": "intro",
         "question": None, "reaction": None, "group_answers": {},
         # If the owner closes the page during the intro, the show starts

@@ -4146,6 +4146,14 @@ button.tenna-cell:disabled { opacity: .32; cursor: default; }
   filter: grayscale(1) contrast(1.08) brightness(.82);
   pointer-events: none;
 }
+.game-screen.spectator-camera .game-select-screen .game-select-row,
+.game-screen.spectator-camera .game-select-screen .game-option,
+.game-screen.spectator-camera .game-select-screen .game-select-description {
+  pointer-events: auto;
+}
+.game-screen.spectator-camera .game-select-screen .game-option {
+  cursor: help;
+}
 .game-screen.spectator-camera .event-overlay:not(.hidden) {
   pointer-events: auto;
 }

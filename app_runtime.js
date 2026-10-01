@@ -6866,6 +6866,9 @@ function drawGameSelection() {
       gameSelectDescription.textContent = "Выберите объект для работы";
     });
     card.addEventListener("click", () => {
+      // Spectators may inspect anomaly descriptions by hovering the cards,
+      // but only the active player is allowed to select one.
+      if (spectatorMode) return;
       playSound("selectContainer");
       card.classList.add("is-leaving");
       if (Number(item?.id) === 32) {
