@@ -7862,7 +7862,10 @@ def finish_research(user_id, anomaly_id, *, advance_on_clay_death=True):
     payload["reward"] = _apply_post_research_companion_effects(user_id, anomaly_id, payload.get("reward"))
     if not reward_was_claimed:
         with db_connect() as conn:
-            has_clay = _player_has_inventory_item(conn, int(user_id), core.CLAY_ITEM_ID)
+            has_clay = (
+                int(_safe_global_value("ClayHolder", 0) or 0) == int(user_id)
+                or _player_has_inventory_item(conn, int(user_id), core.CLAY_ITEM_ID)
+            )
         if has_clay:
             core.set_global_value(DB_PATH, "CLAY_BYPASS", 1)
             try:
@@ -7875,6 +7878,8 @@ def finish_research(user_id, anomaly_id, *, advance_on_clay_death=True):
             with db_connect_write() as conn:
                 if _player_has_inventory_item(conn, int(user_id), core.CLAY_ITEM_ID):
                     _consume_inventory_item(conn, int(user_id), core.CLAY_ITEM_ID)
+            if int(_safe_global_value("ClayHolder", 0) or 0) == int(user_id):
+                core.set_global_value(DB_PATH, "ClayHolder", 0)
             core.set_global_value(DB_PATH, "CLAY_ABSORB", 0)
             core.set_global_value(DB_PATH, "ClayAbsorbed", 0)
             payload["clay_penalty"] = {

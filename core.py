@@ -675,14 +675,31 @@ def apply_damage(
         sp = max(sp - int(sp_damage), 0)
 
         was_dead = int(row["IsDead"] or 0) == 1
+        laplace_protection_active = False
+        if _safe_int(source_anomaly_id, 0) == 67:
+            try:
+                laplace_row = conn.execute(
+                    "SELECT COALESCE(active, 0) AS active FROM LAPLACE67_SNAPSHOT WHERE id = 1"
+                ).fetchone()
+                laplace_protection_active = bool(laplace_row and _safe_int(laplace_row["active"], 0) == 1)
+            except sqlite3.OperationalError:
+                # Older databases may not have the web-only snapshot table.
+                laplace_protection_active = False
         laplace_rescued = bool(
             not was_dead
             and _safe_int(source_anomaly_id, 0) == 67
+            and laplace_protection_active
             and int(hp_damage) > 0
             and hp <= 0
         )
         if laplace_rescued:
             hp = max(1, _safe_int(row["MAXHP"], 100))
+            # Consume the hidden protection in the same transaction as the
+            # rescue. A second lethal hit from anomaly 67 is therefore real,
+            # even before the runtime has finished displaying the first one.
+            conn.execute(
+                "UPDATE LAPLACE67_SNAPSHOT SET active = 0, armed = 0 WHERE id = 1 AND active = 1"
+            )
         elif _effect_has(effects, HOTDOG_FLAG) and hp <= 0:
             hp = 1
             _effect_remove_prefix(effects, HOTDOG_PEND_PREFIX)
