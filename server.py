@@ -11005,6 +11005,16 @@ def select_day_anomalies(day):
     stored_seen = _safe_global_value("SeenAnomaliesThisGame", []) or []
     if isinstance(stored_seen, list):
         runtime_taken_anomalies.update(int(value) for value in stored_seen if str(value).isdigit())
+    offered_aleph = {
+        int(value)
+        for value in (_safe_global_value("OfferedAlephAnomaliesThisGame", []) or [])
+        if str(value).isdigit()
+    }
+    selected_aleph = {
+        int(value)
+        for value in (_safe_global_value("SelectedAlephAnomaliesThisGame", []) or [])
+        if str(value).isdigit()
+    }
     chosen = []
     anomaly46_seen_before_today = 46 in runtime_taken_anomalies
     forced_anomaly_id = int(_safe_global_value("DebugForcedNextAnomaly", 0) or 0)
@@ -11023,6 +11033,7 @@ def select_day_anomalies(day):
                 (forced_anomaly_id,),
             ).fetchone()
         for class_id in classes:
+            requested_class_id = int(class_id)
             available = conn.execute(
                 """
                 SELECT ID, NAME, PDESCRIPTION, DESCRIPTION, PHOTO, IsDone, CLASS_ID, codename
@@ -11030,9 +11041,42 @@ def select_day_anomalies(day):
                 WHERE CLASS_ID = ? AND ID NOT IN (4, 13, 33)
                 ORDER BY RANDOM()
                 """,
-                (int(class_id),),
+                (requested_class_id,),
             ).fetchall()
-            available = [candidate for candidate in available if int(candidate["ID"]) not in runtime_taken_anomalies]
+            if requested_class_id == 5:
+                # First show ALEPH that have never appeared. When those run
+                # out, previously offered but unselected ALEPH may return.
+                # Once every ALEPH has actually been selected, use WAW.
+                not_selected = [
+                    candidate for candidate in available
+                    if int(candidate["ID"]) not in selected_aleph
+                    and all(int(item["id"]) != int(candidate["ID"]) for item in chosen)
+                ]
+                never_offered = [
+                    candidate for candidate in not_selected
+                    if int(candidate["ID"]) not in offered_aleph
+                ]
+                available = never_offered or not_selected
+                if not available:
+                    available = conn.execute(
+                        """
+                        SELECT ID, NAME, PDESCRIPTION, DESCRIPTION, PHOTO, IsDone, CLASS_ID, codename
+                        FROM ANOMALY
+                        WHERE CLASS_ID = 4 AND ID NOT IN (4, 13, 33)
+                        ORDER BY RANDOM()
+                        """
+                    ).fetchall()
+                    available = [
+                        candidate for candidate in available
+                        if int(candidate["ID"]) not in runtime_taken_anomalies
+                        and all(int(item["id"]) != int(candidate["ID"]) for item in chosen)
+                    ]
+            else:
+                available = [
+                    candidate for candidate in available
+                    if int(candidate["ID"]) not in runtime_taken_anomalies
+                    and all(int(item["id"]) != int(candidate["ID"]) for item in chosen)
+                ]
             row = pick_weighted(available)
             if row is None:
                 # The day table is authoritative; never replace a missing class
@@ -11101,9 +11145,14 @@ def select_day_anomalies(day):
                     ORDER BY RANDOM()
                     """
                 ).fetchall()
+            current_ids = {int(item["id"]) for item in chosen}
+            eligible_aleph = [
+                row for row in aleph_rows
+                if int(row["ID"]) not in selected_aleph and int(row["ID"]) not in current_ids
+            ]
             aleph_row = next(
-                (row for row in aleph_rows if int(row["ID"]) not in runtime_taken_anomalies),
-                aleph_rows[0] if aleph_rows else None,
+                (row for row in eligible_aleph if int(row["ID"]) not in offered_aleph),
+                eligible_aleph[0] if eligible_aleph else None,
             )
             if aleph_row is not None:
                 replace_index = next(
@@ -11128,6 +11177,47 @@ def select_day_anomalies(day):
         core.set_global_value(DB_PATH, "alephsummoned", 0)
     if forced_anomaly_id > 0:
         core.set_global_value(DB_PATH, "DebugForcedNextAnomaly", 0)
+    # A daily pool must always contain five cards. Late-game class schedules
+    # can exhaust their unique rows, especially after forced anomalies. Fill
+    # only the missing positions with WAW: unseen WAW first, and recycle one
+    # only when no unseen WAW remains.
+    if len(chosen) < 5:
+        with db_connect() as conn:
+            waw_rows = conn.execute(
+                """
+                SELECT ID, NAME, PDESCRIPTION, DESCRIPTION, PHOTO, IsDone, CLASS_ID, codename
+                FROM ANOMALY
+                WHERE CLASS_ID = 4 AND ID NOT IN (4, 13, 33)
+                ORDER BY RANDOM()
+                """
+            ).fetchall()
+            while len(chosen) < 5:
+                current_ids = {int(item["id"]) for item in chosen}
+                candidates = [
+                    row for row in waw_rows
+                    if int(row["ID"]) not in current_ids
+                    and int(row["ID"]) not in runtime_taken_anomalies
+                ]
+                if not candidates:
+                    candidates = [row for row in waw_rows if int(row["ID"]) not in current_ids]
+                row = pick_weighted(candidates)
+                if row is None:
+                    break
+                anomaly_id = int(row["ID"])
+                runtime_taken_anomalies.add(anomaly_id)
+                chosen.append({
+                    "id": anomaly_id,
+                    "name": row["NAME"] if int(row["IsDone"] or 0) == 1 else (row["codename"] or f"SC-UN-U-{anomaly_id}"),
+                    "description": _selection_description(row, conn),
+                    "class_id": int(row["CLASS_ID"] or 0),
+                    "photo": f"/photo/anomaly/{row['PHOTO']}.png" if row["PHOTO"] else None,
+                })
+    # Count only cards that survived every forced replacement and were
+    # actually shown in the final pool for this day.
+    offered_aleph.update(
+        int(item["id"]) for item in chosen if int(item.get("class_id") or 0) == 5
+    )
+    core.set_global_value(DB_PATH, "OfferedAlephAnomaliesThisGame", sorted(offered_aleph))
     core.set_global_value(DB_PATH, "SeenAnomaliesThisGame", sorted(runtime_taken_anomalies))
     return chosen
 
@@ -11183,6 +11273,8 @@ def maybe_progress_countdown():
         core.start_game(DB_PATH, player_ids, total_days=TOTAL_GAME_DAYS)
         runtime_taken_anomalies.clear()
         core.set_global_value(DB_PATH, "SeenAnomaliesThisGame", [])
+        core.set_global_value(DB_PATH, "OfferedAlephAnomaliesThisGame", [])
+        core.set_global_value(DB_PATH, "SelectedAlephAnomaliesThisGame", [])
         assignments = assign_anomalies_to_lobby_players()
         lobby_state["game_assignments"] = assignments
         add_system_message("РРіСЂР° РЅР°С‡Р°Р»Р°СЃСЊ. РљРѕРЅС‚РµР№РЅРµСЂС‹ РґРѕСЃС‚СѓРїРЅС‹ РґР»СЏ С‚РµРєСѓС‰РµРіРѕ С…РѕРґР°.")
@@ -11264,6 +11356,22 @@ def _claim_day_anomaly(user_id, anomaly_id):
             lobby_state["game_assignments"][player_id] = [
                 item for item in pool if int(item.get("id") or 0) != anomaly_id
             ]
+
+    # Offered ALEPH may return on later days, but a selected ALEPH is retired
+    # for the rest of this game.
+    with db_connect() as conn:
+        selected_row = conn.execute(
+            "SELECT COALESCE(CLASS_ID, 0) AS CLASS_ID FROM ANOMALY WHERE ID = ?",
+            (anomaly_id,),
+        ).fetchone()
+    if selected_row and int(selected_row["CLASS_ID"] or 0) == 5:
+        selected = {
+            int(value)
+            for value in (_safe_global_value("SelectedAlephAnomaliesThisGame", []) or [])
+            if str(value).isdigit()
+        }
+        selected.add(anomaly_id)
+        core.set_global_value(DB_PATH, "SelectedAlephAnomaliesThisGame", sorted(selected))
 
     with db_connect() as conn:
         rows = conn.execute(
