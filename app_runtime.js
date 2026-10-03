@@ -282,6 +282,8 @@ let gameStatePollBusy = false;
 let lastAppliedTurnOwnerId = null;
 let lastActiveGameStartedAt = null;
 let deathModalActive = false;
+let activeDeathSignature = "";
+let acknowledgedDeathSignature = "";
 let spectatorMode = false;
 let spectatorCameraKey = "";
 let spectatorNoiseTimer = null;
@@ -461,6 +463,7 @@ let x125BattleRuntime = null;
 let x125AudioLock = false;
 let x125IntroActive = false;
 let x125PendingIntroEvent = null;
+const MASTER_AUDIO_VOLUME = 0.35;
 
 const soundPlayers = {
   hoverContainer: new Audio("/sound/DoorOn.wav"),
@@ -487,7 +490,7 @@ const soundPlayers = {
 
 Object.values(soundPlayers).forEach((audio) => {
   audio.preload = "auto";
-  audio.volume = 0.6;
+  audio.volume = MASTER_AUDIO_VOLUME;
 });
 
 const typeMap = { 1: "Природный", 2: "Темный", 3: "Конструкт", 4: "Абстракт", 5: "Гуманоид" };
@@ -523,7 +526,7 @@ function ensureGameMusic(track = "selection") {
   const src = track === "brainrot" && brainrotMusicUrl
     ? brainrotMusicUrl
     : (track === "ambient" ? "/sound/ambient1.mp3" : "/sound/selection.mp3");
-  const volume = track === "ambient" ? 0.28 : 0.35;
+  const volume = MASTER_AUDIO_VOLUME;
   if (!gameMusic) {
     gameMusic = new Audio(src);
     gameMusic.loop = true;
@@ -605,6 +608,7 @@ function playInitialEffectAnimation() {
 
 function closeEventModal() {
   if (!eventOverlay) return;
+  const closedDeathSignature = deathModalActive ? activeDeathSignature : "";
   eventOverlay.classList.add("hidden");
   eventRollerWrap.classList.add("hidden");
   eventChoices.innerHTML = "";
@@ -614,6 +618,8 @@ function closeEventModal() {
   eventRoller.innerHTML = "";
   eventEffect.textContent = "";
   deathModalActive = false;
+  activeDeathSignature = "";
+  if (closedDeathSignature) acknowledgedDeathSignature = closedDeathSignature;
   if (eventModalResolver) {
     const resolve = eventModalResolver;
     eventModalResolver = null;
@@ -702,6 +708,7 @@ function closeDetailsEventModal() {
 }
 
 function showDetailsChoiceModal(config = {}) {
+  if (deathModalActive) return;
   if (!detailsEventOverlay) return;
   detailsEventIcon.src = config.icon || "/photo/work_room/hinthidden.png";
   detailsEventIcon.alt = config.iconAlt || "Событие";
@@ -987,7 +994,7 @@ async function startDoomsdaySecretVn() {
   if (gameMusic) gameMusic.pause();
   const secretMusic = new Audio("/sound/Lobotomy%20Corporation%20OST%20-%20Story%2004.mp3");
   secretMusic.loop = true;
-  secretMusic.volume = 0.55;
+  secretMusic.volume = MASTER_AUDIO_VOLUME;
   if (backgroundMusicEnabled) secretMusic.play().catch(() => {});
   const stopSecretMusic = () => {
     secretMusic.pause();
@@ -1054,6 +1061,7 @@ async function startDoomsdaySecretVn() {
 }
 
 function showDetailsInfoModal(config = {}) {
+  if (deathModalActive) return Promise.resolve();
   if (!detailsEventOverlay) return Promise.resolve();
   detailsEventResolver = null;
   showDetailsChoiceModal({
@@ -1430,7 +1438,7 @@ function showVnPopup(text, choices = [{ label: "Закрыть", onClick: closeV
 function playVnAudio(src) {
   try {
     const audio = new Audio(src);
-    audio.volume = 0.85;
+    audio.volume = MASTER_AUDIO_VOLUME;
     audio.__playFailed = false;
     audio.play().catch(() => { audio.__playFailed = true; });
     return audio;
@@ -1454,7 +1462,7 @@ function sovuhSound(name, volume = 0.85) {
   const src = `/sound/${encodeURIComponent(name)}`;
   const audio = playVnAudio(src);
   if (audio) {
-    audio.volume = volume;
+    audio.volume = Math.min(MASTER_AUDIO_VOLUME, Math.max(0, Number(volume) || MASTER_AUDIO_VOLUME));
     sovuhVnAudio.add(audio);
     audio.addEventListener("ended", () => sovuhVnAudio.delete(audio), { once: true });
   }
@@ -2418,6 +2426,8 @@ const TENNA_EPITHETS = ["Непревзойдённый","Обворожител
 const TENNA_POSES = ["/photo/special/Tenna_1.png", "/photo/special/tenna2.webp", "/photo/special/tenna3.webp"];
 const tennaVoice = new Audio("/sound/tenna.mp3");
 const tennaApplause = new Audio("/sound/applause.mp3");
+tennaVoice.volume = MASTER_AUDIO_VOLUME;
+tennaApplause.volume = MASTER_AUDIO_VOLUME;
 
 function tennaPlayVoice() { try { tennaVoice.currentTime = 0; tennaVoice.play().catch(() => {}); } catch (_) {} }
 function tennaStopVoice() { try { tennaVoice.pause(); tennaVoice.currentTime = 0; } catch (_) {} }
@@ -3265,7 +3275,15 @@ function showHeartAttackModal() {
 
 function showDeathModal(reasonText) {
   if (!eventOverlay) return Promise.resolve();
+  if (vnOverlay && !vnOverlay.classList.contains("hidden")) closeVnOverlay();
+  if (!eventOverlay.classList.contains("hidden") && !deathModalActive) {
+    // Resolve and replace any older informational popup. Otherwise its
+    // pending Promise keeps polling blocked and leaves a dead player on a
+    // black screen forever.
+    closeEventModal();
+  }
   deathModalActive = true;
+  activeDeathSignature = `${currentUserId()}:${lastActiveGameStartedAt || 0}:${String(reasonText || "")}`;
   eventIcon.classList.remove("hidden");
   eventIcon.src = "/photo/work_room/heartattack.png";
   eventIcon.alt = "Смерть";
@@ -3277,6 +3295,23 @@ function showDeathModal(reasonText) {
   return new Promise((resolve) => {
     eventModalResolver = resolve;
   });
+}
+
+function showAuthoritativeDeathIfNeeded(payload) {
+  const turnUi = payload?.turn_ui || {};
+  if (turnUi.is_alive !== false) return false;
+  const reason = turnUi.death_reason || "Причина смерти неизвестна.";
+  const signature = `${currentUserId()}:${Number(payload?.core?.started_at || payload?.lobby?.game_started_at || lastActiveGameStartedAt || 0)}:${String(reason)}`;
+  if (deathModalActive) return true;
+  if (acknowledgedDeathSignature === signature) return false;
+  closeInventoryModal();
+  closeDetailsEventModal();
+  showDeathModal(reason).then(() => {
+    acknowledgedDeathSignature = signature;
+    applyGameState(payload, { forceRefresh: true }).catch(() => {});
+  });
+  activeDeathSignature = signature;
+  return true;
 }
 
 function showInfoModal(introText, effectText = "", options = {}) {
@@ -3433,6 +3468,7 @@ async function showUtilizerNoticeIfPending(notice) {
 }
 
 function showEventChoiceModal(config = {}) {
+  if (deathModalActive) return;
   if (!eventOverlay) return;
   eventIcon.classList.remove("hidden");
   eventIcon.src = config.icon || "/photo/work_room/badresult.png";
@@ -3831,7 +3867,7 @@ async function animateMoonEye(img, color, closeAfter = false, frameDelay = 45) {
 
 function playMoonEyeSound(filename) {
   const audio = new Audio(`/sound/${filename}`);
-  audio.volume = 0.8;
+  audio.volume = MASTER_AUDIO_VOLUME;
   audio.play().catch(() => {});
   return audio;
 }
@@ -8259,6 +8295,7 @@ async function applyGameState(payload, options = {}) {
   const activeGameStartedAt = Number(payload?.core?.started_at || payload?.lobby?.game_started_at || 0);
   if (activeGameStartedAt && lastActiveGameStartedAt && activeGameStartedAt !== lastActiveGameStartedAt) {
     closeEventModal();
+    acknowledgedDeathSignature = "";
     gameFinalScreen.classList.add("hidden");
     activeTennaGame = null;
     tennaOverlay?.classList.add("hidden");
@@ -8268,6 +8305,9 @@ async function applyGameState(payload, options = {}) {
     document.getElementById("po3EventOverlay")?.classList.add("hidden");
   }
   if (activeGameStartedAt) lastActiveGameStartedAt = activeGameStartedAt;
+  if (showAuthoritativeDeathIfNeeded(payload)) {
+    return true;
+  }
   const sharedMultiplayerEvent = !!(payload?.tenna_game?.active || payload?.po3_event?.active);
   if (sharedMultiplayerEvent) stopSpectatorCamera();
   if (payload?.tenna_game?.active) {
@@ -8449,7 +8489,16 @@ async function applyGameState(payload, options = {}) {
 function ensureGamePolling() {
   if (gameStatePoller) return;
   gameStatePoller = window.setInterval(async () => {
-    if (gameScreen.classList.contains("hidden") || gameStatePollBusy) return;
+    if (gameScreen.classList.contains("hidden")) return;
+    if (gameStatePollBusy) {
+      // A previous render may be awaiting an informational popup. Continue a
+      // lightweight authoritative check so a death can replace that popup.
+      try {
+        const latest = await api(`/api/game?user_id=${currentUserId()}`);
+        showAuthoritativeDeathIfNeeded(latest);
+      } catch (_) {}
+      return;
+    }
     gameStatePollBusy = true;
     try {
       const payload = await api(`/api/game?user_id=${currentUserId()}`);

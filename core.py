@@ -918,18 +918,23 @@ def advance_turn(db_path: Path | str, *, reason: str = "manual") -> dict:
     if not alive:
         return {"ok": True, "state": finish_game(db_path, winner_user_id=None, reason="no_alive_players"), "events": [{"type": "game_finished"}]}
 
-    current_index = int(state.get("turn_index") or 0)
-    next_index = current_index
-    wrapped_day = False
-    for _ in range(len(turn_order)):
-        next_index = (next_index + 1) % len(turn_order)
-        if next_index <= current_index:
-            wrapped_day = True
-        candidate = turn_order[next_index]
-        if candidate in alive:
-            break
-
     current_day = int(state.get("current_day") or 1)
+    current_index = int(state.get("turn_index") or 0) % len(turn_order)
+    # Every day starts one slot later: 1-2-3-4, then 2-3-4-1, etc.
+    # Determine whether another living participant remains in today's rotated
+    # order instead of treating the numeric wrap to index 0 as the day border.
+    day_start_index = (current_day - 1) % len(turn_order)
+    day_indices = [(day_start_index + offset) % len(turn_order) for offset in range(len(turn_order))]
+    try:
+        current_day_position = day_indices.index(current_index)
+    except ValueError:
+        current_day_position = -1
+    remaining_today = [
+        index for index in day_indices[current_day_position + 1:]
+        if turn_order[index] in alive
+    ]
+    wrapped_day = not bool(remaining_today)
+    next_index = remaining_today[0] if remaining_today else current_index
     if wrapped_day:
         skip_day = int(get_global_value(db_path, "skipday", 0) or 0) == 1
         current_day += 2 if skip_day else 1
@@ -946,6 +951,10 @@ def advance_turn(db_path: Path | str, *, reason: str = "manual") -> dict:
             if skip_day:
                 set_global_value(db_path, "skipday", 0)
             return {"ok": True, "state": finish_game(db_path, reason="days_completed"), "events": [{"type": "game_finished"}]}
+
+        next_day_start = (current_day - 1) % len(turn_order)
+        next_day_indices = [(next_day_start + offset) % len(turn_order) for offset in range(len(turn_order))]
+        next_index = next(index for index in next_day_indices if turn_order[index] in alive)
 
     new_user_id = turn_order[next_index]
     with _connect(db_path) as conn:

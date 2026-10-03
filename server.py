@@ -4059,7 +4059,7 @@ def _advance_after_nonwork_death(user_id, reason):
     return get_game_state(int(user_id))
 
 
-def _recover_dead_current_turn():
+def _recover_dead_current_turn(requester_id=None):
     """Advance a game left on a dead current player after an interrupted action."""
     state = core.get_game_state(DB_PATH)
     if state.get("status") != "started":
@@ -4067,7 +4067,8 @@ def _recover_dead_current_turn():
     current_id = int(state.get("current_turn_user_id") or 0)
     if current_id <= 0 or not _is_player_dead(current_id):
         return None
-    return _advance_after_nonwork_death(current_id, "recover_dead_current_turn")
+    _advance_after_nonwork_death(current_id, "recover_dead_current_turn")
+    return get_game_state(int(requester_id) if requester_id is not None else current_id)
 
 
 ALASTOR_TASKS = {
@@ -6574,7 +6575,7 @@ def use_inventory_item(user_id, item_id):
                 "room": get_work_room_payload(int(user_id), anomaly_id) if anomaly_id else None,
                 "clay_transfer": {"pending": True, "candidates": candidates},
             }
-        if item_id not in (8, 27, 35):
+        if item_id not in (27, 35):
             _consume_inventory_item(conn, int(user_id), item_id)
     _x125_mark("item_used")
     item_result = _apply_item_effect(int(user_id), item_row, anomaly_id)
@@ -6720,6 +6721,19 @@ def get_inventory_payload(user_id):
     }
 
 
+def _rotated_day_first_alive(turn_order, alive_ids, day_number):
+    order = [int(pid) for pid in (turn_order or [])]
+    alive = {int(pid) for pid in (alive_ids or [])}
+    if not order or not alive:
+        return None, None
+    start_index = (max(1, int(day_number)) - 1) % len(order)
+    for offset in range(len(order)):
+        index = (start_index + offset) % len(order)
+        if order[index] in alive:
+            return index, order[index]
+    return None, None
+
+
 def _force_start_next_day_from_doomsday(user_id):
     """Immediately discard the remaining turns and enter the following day."""
     state = core.get_game_state(DB_PATH)
@@ -6740,14 +6754,15 @@ def _force_start_next_day_from_doomsday(user_id):
         core.finish_game(DB_PATH, reason="doomsday_days_completed")
         _finalize_finished_game(player_ids)
         return {"game_state": get_game_state(int(user_id)), "advanced": True, "finished": True}
+    first_index, first_alive = _rotated_day_first_alive(order, alive, target_day)
     with db_connect_write() as conn:
         conn.execute(
-            "UPDATE CORE_GAME_STATE SET current_day = ?, turn_index = 0, current_turn_user_id = ?, last_event_at = ? WHERE id = 1",
-            (target_day, alive[0], time.time()),
+            "UPDATE CORE_GAME_STATE SET current_day = ?, turn_index = ?, current_turn_user_id = ?, last_event_at = ? WHERE id = 1",
+            (target_day, first_index, first_alive, time.time()),
         )
         conn.commit()
     core.set_global_value(DB_PATH, "CurrentDay", target_day)
-    core.set_global_value(DB_PATH, "ActiveWorker", alive[0])
+    core.set_global_value(DB_PATH, "ActiveWorker", first_alive)
     runtime_game["current_day"] = target_day
     runtime_game["day_started_at"] = time.time()
     _cleanup_new_day_effects(player_ids)
@@ -10342,8 +10357,7 @@ def _force_next_day_after_softlock():
         runtime_game["winner_id"] = finished.get("winner_user_id")
         _finalize_finished_game(turn_order)
         return finished
-    first_alive = alive_ids[0]
-    first_index = turn_order.index(first_alive)
+    first_index, first_alive = _rotated_day_first_alive(turn_order, alive_ids, target_day)
     with db_connect_write() as conn:
         conn.execute(
             """UPDATE CORE_GAME_STATE
@@ -11436,6 +11450,52 @@ def create_or_join_lobby(player):
         add_system_message(f"{player['name']} РїРѕРґРєР»СЋС‡Р°РµС‚СЃСЏ Рє Р»РѕР±Р±Рё.")
 
 
+def _replace_guest_lobby_identity(guest_profile, discord_player):
+    """Replace the current browser's stale guest slot after Discord login."""
+    if not guest_profile or not bool(guest_profile.get("is_guest")):
+        return False
+    guest_id = int(guest_profile.get("id") or 0)
+    discord_id = int(discord_player.get("id") or 0)
+    if guest_id <= 0 or discord_id <= 0 or guest_id == discord_id:
+        return False
+    transferred_art = 0
+    with state_lock:
+        if lobby_state.get("status") == "started":
+            return False
+        guest_index = next(
+            (index for index, entry in enumerate(lobby_state.get("players", [])) if int(entry.get("id") or 0) == guest_id),
+            None,
+        )
+        if guest_index is None:
+            return False
+        existing_index = next(
+            (index for index, entry in enumerate(lobby_state.get("players", [])) if int(entry.get("id") or 0) == discord_id),
+            None,
+        )
+        guest_entry = lobby_state["players"][guest_index]
+        transferred_art = int(discord_player.get("art_id") or guest_entry.get("art_id") or 0)
+        if existing_index is not None:
+            lobby_state["players"].pop(guest_index)
+        else:
+            guest_entry.update({
+                "id": discord_id,
+                "name": discord_player.get("name") or f"Discord-{discord_id}",
+                "avatar_url": discord_player.get("avatar_url"),
+                "art_id": transferred_art,
+                "ready": False,
+            })
+        old_assignment = lobby_state.get("game_assignments", {}).pop(guest_id, None)
+        if old_assignment is not None and existing_index is None:
+            lobby_state["game_assignments"][discord_id] = old_assignment
+        lobby_state["status"] = "idle"
+        lobby_state["countdown_started_at"] = None
+        lobby_state["game_started_at"] = None
+    runtime_players.pop(guest_id, None)
+    if transferred_art > 0:
+        update_player_art(discord_id, transferred_art)
+    return True
+
+
 def leave_lobby_slot(player_id):
     with state_lock:
         index = next((i for i, player in enumerate(lobby_state["players"]) if player["id"] == player_id), None)
@@ -12338,14 +12398,16 @@ def get_game_state(player_id):
     if not player_ids and (core_state.get("status") == "finished" or not runtime_game["started"]):
         player_ids = [int(pid) for pid in runtime_game.get("final_player_ids") or []]
     alive_status = {}
+    death_reasons = {}
     if player_ids:
         placeholders = ",".join("?" for _ in player_ids)
         with db_connect() as conn:
             rows = conn.execute(
-                f"SELECT ID, COALESCE(IsDead, 0) AS IsDead FROM PLAYERS WHERE ID IN ({placeholders})",
+                f"SELECT ID, COALESCE(IsDead, 0) AS IsDead, COALESCE(DEATHREASON, '') AS DEATHREASON FROM PLAYERS WHERE ID IN ({placeholders})",
                 tuple(player_ids),
             ).fetchall()
         alive_status = {int(row["ID"]): int(row["IsDead"] or 0) == 0 for row in rows}
+        death_reasons = {int(row["ID"]): _normalize_death_reason(row["DEATHREASON"]) for row in rows}
         if any(not alive for alive in alive_status.values()):
             _x125_mark("death")
         with db_connect() as conn:
@@ -12552,6 +12614,7 @@ def get_game_state(player_id):
             "future_days": future_days,
             "is_my_turn": int(core_state.get("current_turn_user_id") or 0) == int(player_id),
             "is_alive": alive_status.get(int(player_id), True),
+            "death_reason": death_reasons.get(int(player_id), "") if not alive_status.get(int(player_id), True) else "",
         },
         "camera_view": camera_view,
         "anomalies": assignments,
@@ -12978,10 +13041,17 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.respond_error(HTTPStatus.BAD_REQUEST, "Discord OAuth state invalid.")
                 return
             oauth_states.pop(state, None)
+            previous_profile = get_session_profile(self)
             try:
                 token = exchange_discord_code(code)
                 discord_user = fetch_discord_user(token["access_token"])
                 sync_discord_user_to_db(discord_user)
+                discord_player = ensure_player(
+                    user_id=int(discord_user["id"]),
+                    username=discord_user.get("global_name") or discord_user.get("username"),
+                    avatar_url=build_discord_avatar_url(discord_user),
+                )
+                _replace_guest_lobby_identity(previous_profile, discord_player)
                 sid, _profile = create_session(discord_user)
             except Exception as exc:
                 self.respond_error(HTTPStatus.BAD_GATEWAY, f"Discord OAuth failed: {exc}")
@@ -13026,7 +13096,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.respond_error(HTTPStatus.BAD_REQUEST, "????? user_id.")
                 return
             with gameplay_action_lock:
-                recovered = _recover_dead_current_turn()
+                recovered = _recover_dead_current_turn(int(query["user_id"][0]))
                 self.respond_json(recovered or get_game_state(int(query["user_id"][0])))
             return
         if parsed.path == "/api/game/x125-battle":
